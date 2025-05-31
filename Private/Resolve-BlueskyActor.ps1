@@ -1,4 +1,4 @@
-function Resolve-BlueskyActor {
+﻿function Resolve-BlueskyActor {
     <#
     .SYNOPSIS
         Resolves the actor identifier (Username, Handle, or Did) from a session object.

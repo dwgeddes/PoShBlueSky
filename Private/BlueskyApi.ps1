@@ -1,17 +1,17 @@
-function Get-BlueskyProfileApi {
+﻿function Get-BlueskyProfileApi {
     <#
     .SYNOPSIS
         Calls the BlueSky API to retrieve a user's profile.
     #>
     param(
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory=$false)]
         $Session,
         [Parameter(Mandatory=$true)]
         [hashtable]$Params
     )
     $endpoint = "/xrpc/app.bsky.actor.getProfile"
     try {
-        $response = Invoke-BlueSkyApiRequest -Endpoint $endpoint -Method 'GET' -Query $Params
+        $response = Invoke-BlueSkyApiRequest -Session $Session -Endpoint $endpoint -Method 'GET' -Query $Params
         if ($null -eq $response) { return $null }
         if ($response -is [string]) { $response = $response | ConvertFrom-Json }
         if ($response) {
@@ -32,14 +32,14 @@ function Get-BlueskyTimelineApi {
         Calls the BlueSky API to retrieve the user's timeline.
     #>
     param(
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory=$false)]
         $Session,
         [Parameter(Mandatory=$true)]
         [hashtable]$Params
     )
     $endpoint = "/xrpc/app.bsky.feed.getTimeline"
     try {
-        $response = Invoke-BlueSkyApiRequest -Endpoint $endpoint -Method 'GET' -Query $Params
+        $response = Invoke-BlueSkyApiRequest -Session $Session -Endpoint $endpoint -Method 'GET' -Query $Params
         if ($null -eq $response) { return $null }
         if ($response -is [string]) { $response = $response | ConvertFrom-Json }
         if ($response) {
@@ -59,25 +59,18 @@ function New-BlueskyPostApi {
     .SYNOPSIS
         Calls the BlueSky API to create a new post.
     #>
+    [CmdletBinding(SupportsShouldProcess=$true)]
     param(
         [Parameter(Mandatory=$true)]
         $Session,
-        [Parameter(Mandatory=$false)]
-        $Text,
-        [Parameter(Mandatory=$false)]
+        [Parameter(Mandatory=$true)]
         $Body
     )
-    $endpoint = "/xrpc/com.atproto.repo.createRecord"
-    if ($null -ne $Text) {
-        # Test path: return mock result
-        if ($Text -is [string] -and $Text.StartsWith('{')) {
-            return $Text | ConvertFrom-Json
-        }
-        return @{ uri = 'at://test/post/123' }
-    } elseif ($null -ne $Body) {
-        # Real path: call API
+    
+    if ($PSCmdlet.ShouldProcess("Bluesky", "Create new post")) {
+        $endpoint = "/xrpc/com.atproto.repo.createRecord"
         try {
-            $response = Invoke-BlueSkyApiRequest -Endpoint $endpoint -Method 'POST' -Body $Body
+            $response = Invoke-BlueSkyApiRequest -Session $Session -Endpoint $endpoint -Method 'POST' -Body $Body
             if ($null -eq $response) { return $null }
             if ($response -is [string]) { $response = $response | ConvertFrom-Json }
             if ($response) {
@@ -85,8 +78,8 @@ function New-BlueskyPostApi {
             }
         } catch {
             Write-Error "Failed to create post: $_"
+            throw
         }
-        return $null
     }
     return $null
 }
@@ -102,7 +95,7 @@ function Get-BlueskyNotificationApi {
     )
     $endpoint = "/xrpc/app.bsky.notification.listNotifications"
     try {
-        $response = Invoke-BlueSkyApiRequest -Endpoint $endpoint -Method 'GET'
+        $response = Invoke-BlueSkyApiRequest -Session $Session -Endpoint $endpoint -Method 'GET'
         if ($null -eq $response) { 
             Write-Verbose "API returned null response"
             return $null 
@@ -120,6 +113,7 @@ function Get-BlueskyNotificationApi {
         }
     } catch {
         Write-Error "Failed to get notifications: $_"
+        throw
     }
     return $null
 }
@@ -130,8 +124,6 @@ function Search-BlueskyUserApi {
         Calls the BlueSky API to search for a user by handle or DID.
     #>
     param(
-        [Parameter(Mandatory=$true)]
-        $Session,
         [Parameter(Mandatory=$true)]
         [string]$Query
     )
@@ -158,12 +150,16 @@ function Get-BlueskyFollowedUserApi {
     .SYNOPSIS
         Gets a list of users you are following on BlueSky.
     #>
-    param(
-        $Session
-    )
-    $actor = $Session.Username
-    if (-not $actor) { $actor = $Session.Handle }
-    if (-not $actor) { $actor = $Session.Did }
+    param()
+    $session = Get-BlueskySession -Raw
+    if (-not $session) {
+        Write-Error 'No active session found'
+        return $null
+    }
+    
+    $actor = $session.Username
+    if (-not $actor) { $actor = $session.Handle }
+    if (-not $actor) { $actor = $session.Did }
     if (-not $actor) {
         Write-Error 'Session does not contain a valid actor identifier (Username, Handle, or Did). Cannot call API.'
         return $null
@@ -191,22 +187,25 @@ function Set-BlueskyFollowedUserApi {
     .SYNOPSIS
         Follows a user on BlueSky.
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param(
-        $Session,
         [Parameter(Mandatory=$true)]
         [string]$UserDid
     )
-    $endpoint = "/xrpc/app.bsky.graph.follow"
-    $body = @{ subject = $UserDid }
-    try {
-        $response = Invoke-BlueSkyApiRequest -Endpoint $endpoint -Method 'POST' -Body $body
-        if ($null -eq $response) { return $null }
-        if ($response -is [string]) { $response = $response | ConvertFrom-Json }
-        if ($response) {
-            return $response
+    
+    if ($PSCmdlet.ShouldProcess($UserDid, "Follow user")) {
+        $endpoint = "/xrpc/app.bsky.graph.follow"
+        $body = @{ subject = $UserDid }
+        try {
+            $response = Invoke-BlueSkyApiRequest -Endpoint $endpoint -Method 'POST' -Body $body
+            if ($null -eq $response) { return $null }
+            if ($response -is [string]) { $response = $response | ConvertFrom-Json }
+            if ($response) {
+                return $response
+            }
+        } catch {
+            Write-Error "Failed to follow user: $_"
         }
-    } catch {
-        Write-Error "Failed to follow user: $_"
     }
     return $null
 }
@@ -216,22 +215,25 @@ function Remove-BlueskyFollowedUserApi {
     .SYNOPSIS
         Unfollows a user on BlueSky.
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param(
-        $Session,
         [Parameter(Mandatory=$true)]
         [string]$FollowUri
     )
-    $endpoint = "/xrpc/com.atproto.repo.deleteRecord"
-    $body = @{ uri = $FollowUri }
-    try {
-        $response = Invoke-BlueSkyApiRequest -Endpoint $endpoint -Method 'POST' -Body $body
-        if ($null -eq $response) { return $null }
-        if ($response -is [string]) { $response = $response | ConvertFrom-Json }
-        if ($response) {
-            return $response
+    
+    if ($PSCmdlet.ShouldProcess($FollowUri, "Unfollow user")) {
+        $endpoint = "/xrpc/com.atproto.repo.deleteRecord"
+        $body = @{ uri = $FollowUri }
+        try {
+            $response = Invoke-BlueSkyApiRequest -Endpoint $endpoint -Method 'POST' -Body $body
+            if ($null -eq $response) { return $null }
+            if ($response -is [string]) { $response = $response | ConvertFrom-Json }
+            if ($response) {
+                return $response
+            }
+        } catch {
+            Write-Error "Failed to unfollow user: $_"
         }
-    } catch {
-        Write-Error "Failed to unfollow user: $_"
     }
     return $null
 }
@@ -241,23 +243,25 @@ function Add-BlueskyLikeApi {
     .SYNOPSIS
         Calls the BlueSky API to like a post.
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param(
-        [Parameter(Mandatory=$true)]
-        $Session,
         [Parameter(Mandatory=$true)]
         [string]$PostUri
     )
-    $endpoint = "/xrpc/app.bsky.feed.like"
-    $body = @{ subject = @{ uri = $PostUri } }
-    try {
-        $response = Invoke-BlueSkyApiRequest -Endpoint $endpoint -Method 'POST' -Body $body
-        if ($null -eq $response) { return $null }
-        if ($response -is [string]) { $response = $response | ConvertFrom-Json }
-        if ($response) {
-            return $response
+    
+    if ($PSCmdlet.ShouldProcess($PostUri, "Like post")) {
+        $endpoint = "/xrpc/app.bsky.feed.like"
+        $body = @{ subject = @{ uri = $PostUri } }
+        try {
+            $response = Invoke-BlueSkyApiRequest -Endpoint $endpoint -Method 'POST' -Body $body
+            if ($null -eq $response) { return $null }
+            if ($response -is [string]) { $response = $response | ConvertFrom-Json }
+            if ($response) {
+                return $response
+            }
+        } catch {
+            Write-Error "Failed to like post: $_"
         }
-    } catch {
-        Write-Error "Failed to like post: $_"
     }
     return $null
 }
@@ -267,23 +271,25 @@ function Remove-BlueskyLikeApi {
     .SYNOPSIS
         Calls the BlueSky API to remove a like from a post.
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param(
-        [Parameter(Mandatory=$true)]
-        $Session,
         [Parameter(Mandatory=$true)]
         [string]$LikeUri
     )
-    $endpoint = "/xrpc/com.atproto.repo.deleteRecord"
-    $body = @{ uri = $LikeUri }
-    try {
-        $response = Invoke-BlueSkyApiRequest -Endpoint $endpoint -Method 'POST' -Body $body
-        if ($null -eq $response) { return $null }
-        if ($response -is [string]) { $response = $response | ConvertFrom-Json }
-        if ($response) {
-            return $response
+    
+    if ($PSCmdlet.ShouldProcess($LikeUri, "Unlike post")) {
+        $endpoint = "/xrpc/com.atproto.repo.deleteRecord"
+        $body = @{ uri = $LikeUri }
+        try {
+            $response = Invoke-BlueSkyApiRequest -Endpoint $endpoint -Method 'POST' -Body $body
+            if ($null -eq $response) { return $null }
+            if ($response -is [string]) { $response = $response | ConvertFrom-Json }
+            if ($response) {
+                return $response
+            }
+        } catch {
+            Write-Error "Failed to remove like: $_"
         }
-    } catch {
-        Write-Error "Failed to remove like: $_"
     }
     return $null
 }
@@ -293,6 +299,7 @@ function Remove-BlueskyPostApi {
     .SYNOPSIS
         Calls the BlueSky API to delete a post.
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory=$true)]
         $Session,
@@ -300,47 +307,49 @@ function Remove-BlueskyPostApi {
         [string]$PostUri
     )
     
-    try {
-        # Validate the PostUri format
-        if (-not $PostUri.StartsWith('at://')) {
-            throw "Invalid post URI format. Expected AT Protocol URI starting with 'at://'"
+    if ($PSCmdlet.ShouldProcess($PostUri, "Delete post")) {
+        try {
+            # Validate the PostUri format
+            if (-not $PostUri.StartsWith('at://')) {
+                throw "Invalid post URI format. Expected AT Protocol URI starting with 'at://'"
+            }
+            
+            # Parse the AT URI to get the components
+            $uriParts = $PostUri.Substring(5) -split '/', 3  # Remove 'at://' and split
+            if ($uriParts.Length -ne 3) {
+                throw "Invalid post URI format. Expected format: at://did/collection/rkey"
+            }
+            
+            $repo = $uriParts[0]  # The DID
+            $collection = $uriParts[1]  # Should be 'app.bsky.feed.post'
+            $rkey = $uriParts[2]  # The record key
+            
+            if ($collection -ne 'app.bsky.feed.post') {
+                throw "Invalid collection. Expected 'app.bsky.feed.post', got '$collection'"
+            }
+            
+            # Use the deleteRecord endpoint
+            $endpoint = "/xrpc/com.atproto.repo.deleteRecord"
+            $body = @{
+                repo = $repo
+                collection = $collection
+                rkey = $rkey
+            }
+            
+            Write-Verbose "Deleting record: repo=$repo, collection=$collection, rkey=$rkey"
+            
+            $response = Invoke-BlueSkyApiRequest -Session $Session -Endpoint $endpoint -Method 'POST' -Body $body
+            
+            if ($response) {
+                return $response
+            } else {
+                # For deleteRecord, a successful response might be empty
+                return @{ success = $true }
+            }
+        } catch {
+            Write-Error "Failed to delete post: $_"
+            throw
         }
-        
-        # Parse the AT URI to get the components
-        $uriParts = $PostUri.Substring(5) -split '/', 3  # Remove 'at://' and split
-        if ($uriParts.Length -ne 3) {
-            throw "Invalid post URI format. Expected format: at://did/collection/rkey"
-        }
-        
-        $repo = $uriParts[0]  # The DID
-        $collection = $uriParts[1]  # Should be 'app.bsky.feed.post'
-        $rkey = $uriParts[2]  # The record key
-        
-        if ($collection -ne 'app.bsky.feed.post') {
-            throw "Invalid collection. Expected 'app.bsky.feed.post', got '$collection'"
-        }
-        
-        # Use the deleteRecord endpoint
-        $endpoint = "/xrpc/com.atproto.repo.deleteRecord"
-        $body = @{
-            repo = $repo
-            collection = $collection
-            rkey = $rkey
-        }
-        
-        Write-Verbose "Deleting record: repo=$repo, collection=$collection, rkey=$rkey"
-        
-        $response = Invoke-BlueSkyApiRequest -Session $Session -Endpoint $endpoint -Method 'POST' -Body $body
-        
-        if ($response) {
-            return $response
-        } else {
-            # For deleteRecord, a successful response might be empty
-            return @{ success = $true }
-        }
-    } catch {
-        Write-Error "Failed to delete post: $_"
-        throw
     }
 }
 
@@ -350,7 +359,7 @@ function Get-BlueskyAllNotificationsApi {
         Calls the BlueSky API to retrieve all notifications (with pagination).
     #>
     param(
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory=$false)]
         $Session,
         [int]$Limit = 1000
     )
@@ -361,7 +370,7 @@ function Get-BlueskyAllNotificationsApi {
         $query = @{ limit = 100 }
         if ($cursor) { $query.cursor = $cursor }
         try {
-            $response = Invoke-BlueSkyApiRequest -Endpoint $endpoint -Method 'GET' -Query $query
+            $response = Invoke-BlueSkyApiRequest -Session $Session -Endpoint $endpoint -Method 'GET' -Query $query
             if ($null -eq $response) {
                 break
             }
@@ -389,14 +398,14 @@ function Search-BlueskyPostsApi {
         Calls the BlueSky API to search for posts.
     #>
     param(
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory=$false)]
         $Session,
         [Parameter(Mandatory=$true)]
         [hashtable]$Params
     )
     $endpoint = "/xrpc/app.bsky.feed.searchPosts"
     try {
-        $response = Invoke-BlueSkyApiRequest -Endpoint $endpoint -Method 'GET' -Query $Params
+        $response = Invoke-BlueSkyApiRequest -Session $Session -Endpoint $endpoint -Method 'GET' -Query $Params
         if ($null -eq $response) { return $null }
         if ($response -is [string]) { $response = $response | ConvertFrom-Json }
         if ($response) {
@@ -417,7 +426,6 @@ function Get-BlueskyFollowersApi {
         Gets a list of users following the specified actor on BlueSky.
     #>
     param(
-        $Session,
         [string]$Actor
     )
     $endpoint = "/xrpc/app.bsky.graph.getFollowers"

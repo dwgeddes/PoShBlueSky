@@ -1,4 +1,4 @@
-function Get-BlueskyFollower {
+﻿function Get-BlueskyFollower {
     <#
     .SYNOPSIS
         Retrieves the list of users following the authenticated Bluesky user.

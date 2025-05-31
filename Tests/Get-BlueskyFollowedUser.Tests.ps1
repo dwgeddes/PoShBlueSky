@@ -1,4 +1,8 @@
-Describe 'Get-BlueSkyFollowedUser' {
+﻿Describe 'Get-BlueSkyFollowedUser' {
+    BeforeAll {
+        Import-Module "$PSScriptRoot/../BlueSkyModule.psd1" -Force
+    }
+    
     Context 'When session is missing all actor identifiers' {
         It 'Should throw an error about missing actor identifier' {
             $badSession = [PSCustomObject]@{ AccessToken = 'token'; RefreshToken = 'refresh'; Expires = (Get-Date).AddHours(1) }

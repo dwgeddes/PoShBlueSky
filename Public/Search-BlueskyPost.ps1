@@ -1,4 +1,4 @@
-function Search-BlueskyPost {
+﻿function Search-BlueskyPost {
     <#
     .SYNOPSIS
         Searches for posts on Bluesky using text queries.
@@ -36,13 +36,13 @@ function Search-BlueskyPost {
         [string]$Cursor
     )
     
-    $session = Get-BlueskySession -Raw
-    if (-not $session) {
-        Write-Warning "No active Bluesky session found. Please connect first by running 'Connect-BlueskySession'."
-        return @()
-    }
-    
     try {
+        $session = Get-BlueskySession -Raw
+        if (-not $session) {
+            Write-Warning "No active Bluesky session found. Please connect first by running 'Connect-BlueskySession'."
+            return @()
+        }
+        
         $params = @{ 
             q = $Query
             limit = $Limit
@@ -127,6 +127,7 @@ function Search-BlueskyPost {
             Write-Warning "No posts found matching query: '$Query'"
             return @()
         }
+        
     } catch {
         Write-Error "Failed to search posts: $_"
         return @()

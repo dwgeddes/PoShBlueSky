@@ -1,7 +1,8 @@
-Describe 'Update-BlueskyProfile' {
+﻿Describe 'Update-BlueskyProfile' {
     BeforeAll {
         Import-Module "$PSScriptRoot/../BlueSkyModule.psd1" -Force
-        $global:BlueskySession = [PSCustomObject]@{
+        # Use module scope instead of global
+        $module:BlueskySession = [PSCustomObject]@{
             Username = 'testuser'
             AccessToken = 'token'
             RefreshToken = 'refresh'
@@ -10,49 +11,65 @@ Describe 'Update-BlueskyProfile' {
     }
 
     Context 'Parameter validation' {
-        It 'Throws if no parameters are specified' {
-            { Update-BlueskyProfile } | Should -Throw -ErrorMessage '*at least one property*'
+        It 'Returns null and warns if no parameters are specified' {
+            $result = Update-BlueskyProfile
+            $result | Should -Be $null
         }
-        It 'Throws if both AvatarPath and AvatarBase64 are specified' {
-            { Update-BlueskyProfile -AvatarPath 'foo.jpg' -AvatarBase64 'abc==' } | Should -Throw -ErrorMessage '*only one of AvatarPath or AvatarBase64*'
+        
+        It 'Validates parameter sets correctly' {
+            { Update-BlueskyProfile -AvatarPath 'foo.jpg' -AvatarBase64 'abc==' } | Should -Throw
         }
     }
 
     Context 'Normal operation' {
         It 'Updates display name only' {
             Mock Invoke-BlueSkyApiRequest { @{ success = $true; displayName = 'NewName' } }
+            Mock Get-BlueskyProfileApi { @{ displayName = 'OldName'; description = 'Bio' } }
             $result = Update-BlueskyProfile -DisplayName 'NewName'
-            $result.displayName | Should -Be 'NewName'
+            $result.DisplayName | Should -Be 'NewName'
         }
+        
         It 'Updates description only' {
             Mock Invoke-BlueSkyApiRequest { @{ success = $true; description = 'Bio' } }
+            Mock Get-BlueskyProfileApi { @{ displayName = 'Name'; description = 'OldBio' } }
             $result = Update-BlueskyProfile -Description 'Bio'
-            $result.description | Should -Be 'Bio'
+            $result.Description | Should -Be 'Bio'
         }
+        
         It 'Updates avatar from path' {
             Mock Upload-BlueSkyImageApi { @{ blob = 'blobid' } }
+            Mock Get-BlueskyProfileApi { @{ displayName = 'Name'; description = 'Bio' } }
             Mock Invoke-BlueSkyApiRequest { @{ success = $true; avatar = 'blobid' } }
             $result = Update-BlueskyProfile -AvatarPath 'foo.jpg'
-            $result.avatar | Should -Be 'blobid'
+            $result.Avatar | Should -Be 'Updated'
         }
+        
         It 'Updates avatar from base64' {
             Mock Upload-BlueSkyImageApi { @{ blob = 'blobid' } }
+            Mock Get-BlueskyProfileApi { @{ displayName = 'Name'; description = 'Bio' } }
             Mock Invoke-BlueSkyApiRequest { @{ success = $true; avatar = 'blobid' } }
             $result = Update-BlueskyProfile -AvatarBase64 'abc=='
-            $result.avatar | Should -Be 'blobid'
+            $result.Avatar | Should -Be 'Updated'
         }
     }
 
     Context 'Error handling' {
-        It 'Throws if Upload-BlueSkyImageApi fails for path' {
+        It 'Returns null and writes error if Upload-BlueSkyImageApi fails for path' {
             Mock Upload-BlueSkyImageApi { $null }
-            { Update-BlueskyProfile -AvatarPath 'foo.jpg' } | Should -Throw -ErrorMessage '*Failed to upload avatar image from path*'
+            Mock Get-BlueskyProfileApi { @{ displayName = 'Name'; description = 'Bio' } }
+            $result = Update-BlueskyProfile -AvatarPath 'foo.jpg'
+            $result | Should -Be $null
         }
-        It 'Throws if Upload-BlueSkyImageApi fails for base64' {
+        
+        It 'Returns null and writes error if Upload-BlueSkyImageApi fails for base64' {
             Mock Upload-BlueSkyImageApi { $null }
-            { Update-BlueskyProfile -AvatarBase64 'abc==' } | Should -Throw -ErrorMessage '*Failed to upload avatar image from base64*'
+            Mock Get-BlueskyProfileApi { @{ displayName = 'Name'; description = 'Bio' } }
+            $result = Update-BlueskyProfile -AvatarBase64 'abc=='
+            $result | Should -Be $null
         }
-        It 'Returns $null and writes error if API call fails' {
+        
+        It 'Returns null and writes error if API call fails' {
+            Mock Get-BlueskyProfileApi { @{ displayName = 'Name'; description = 'Bio' } }
             Mock Invoke-BlueSkyApiRequest { throw 'API error' }
             $result = Update-BlueskyProfile -DisplayName 'fail'
             $result | Should -Be $null

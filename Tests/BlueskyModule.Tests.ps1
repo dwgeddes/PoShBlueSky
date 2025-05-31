@@ -1,4 +1,4 @@
-# Pester tests for BlueSkyModule public and private functions
+﻿# Pester tests for BlueSkyModule public and private functions
 # Run with: Invoke-Pester -Path BlueSkyModule/Tests
 
 Describe 'BlueSkyModule Public Cmdlets' {
@@ -14,7 +14,7 @@ Describe 'BlueSkyModule Public Cmdlets' {
             Handle   = 'testuser.bsky.social'
             Did      = 'did:plc:testuser1234'
         }
-        $global:BlueSkySession = $testSession
+        $module:BlueskySession = $testSession
     }
 
     Context 'Remove-BlueSkyPost' {
@@ -69,24 +69,20 @@ Describe 'BlueSkyModule Public Cmdlets' {
 
     Context 'Get-BlueSkyNotification' {
         It 'Should call Get-BlueSkyNotificationApi and return a PSObject' {
-            Mock Invoke-BlueSkyApiRequest -ModuleName BlueSkyModule { 
-                @{ 
-                    notifications = @(
-                        @{ 
-                            uri = 'at://notification/1'
-                            cid = 'notif1'
-                            author = @{ handle = 'testuser'; displayName = 'Test User' }
-                            reason = 'like'
-                            record = @{ text = 'Test notification'; createdAt = '2024-01-01T12:00:00Z' }
-                            indexedAt = '2024-01-01T12:00:00Z'
-                            isRead = $false
-                        }
-                    )
-                }
+            Mock Get-BlueSkyNotificationApi -ModuleName BlueSkyModule { 
+                @(
+                    @{ 
+                        reason = 'like'
+                        author = @{ handle = 'testuser'; displayName = 'Test User' }
+                        record = @{ text = 'Nice post!' }
+                        indexedAt = '2024-01-01T10:00:00Z'
+                        isRead = $false
+                    }
+                ) 
             }
             $result = Get-BlueSkyNotification
             $result.Count | Should -Be 1
-            $result[0].AuthorHandle | Should -Be '@testuser'
+            $result[0].Type | Should -Be 'Like'
         }
     }
 
@@ -137,6 +133,13 @@ Describe 'BlueSkyModule Public Cmdlets' {
             $result.success | Should -Be $true
         }
     }
+
+    Context 'Session Management' {
+        It 'Should use module scope for session storage' {
+            $module:BlueskySession | Should -Not -Be $null
+            $module:BlueskySession.Username | Should -Be 'testuser'
+        }
+    }
 }
 
 Describe 'BlueSkyModule Private API Functions' {
@@ -145,20 +148,22 @@ Describe 'BlueSkyModule Private API Functions' {
         # Dot-source all private functions for testing
         Get-ChildItem "$PSScriptRoot/../Private" -Filter '*.ps1' | ForEach-Object { . $_.FullName }
         $testSession = [PSCustomObject]@{
-            AccessToken = 'testtoken'
-            RefreshToken = 'testrefresh'
-            Expires = (Get-Date).AddHours(1)
+            AccessJwt = 'testtoken' # Changed from AccessToken to AccessJwt
+            RefreshJwt = 'testrefresh' # Changed from RefreshToken to RefreshJwt
+            Expires = (Get-Date).AddHours(1) # Keep if relevant
             Username = 'testuser'
             Handle   = 'testuser.bsky.social'
             Did      = 'did:plc:testuser1234'
         }
-        $global:BlueSkySession = $testSession
+        # Use module scope for session variable
+        $module:BlueSkySession = $testSession
     }
 
     Context 'Get-BlueSkyProfileApi' {
         It 'Should call Invoke-BlueSkyApiRequest and return a PSObject' {
             Mock Invoke-BlueSkyApiRequest { @{ handle = 'testuser' } }
-            $result = Get-BlueSkyProfileApi -Session $testSession -Params @{}
+            # Pass the module session to the API function if it expects one
+            $result = Get-BlueSkyProfileApi -Session $module:BlueSkySession -Params @{ actor = 'testuser.bsky.social' }
             $result.handle | Should -Be 'testuser'
         }
     }
@@ -166,7 +171,7 @@ Describe 'BlueSkyModule Private API Functions' {
     Context 'Get-BlueSkyTimelineApi' {
         It 'Should call Invoke-BlueSkyApiRequest and return a PSObject' {
             Mock Invoke-BlueSkyApiRequest { @{ feed = @(1,2,3) } }
-            $result = Get-BlueSkyTimelineApi -Session $testSession -Params @{}
+            $result = Get-BlueSkyTimelineApi -Session $module:BlueSkySession -Params @{ limit = 3 }
             $result.feed.Count | Should -Be 3
         }
     }
@@ -174,7 +179,8 @@ Describe 'BlueSkyModule Private API Functions' {
     Context 'New-BlueSkyPostApi' {
         It 'Should call Invoke-BlueSkyApiRequest and return a PSObject' {
             Mock Invoke-BlueSkyApiRequest { @{ uri = 'at://test/post/123' } }
-            $result = New-BlueSkyPostApi -Session $testSession -Text 'Hello!'
+            $postBody = @{ repo = $module:BlueskySession.Did; collection = 'app.bsky.feed.post'; record = @{ text = 'Hello!' } }
+            $result = New-BlueSkyPostApi -Session $module:BlueSkySession -Body $postBody
             $result.uri | Should -Be 'at://test/post/123'
         }
     }
@@ -182,7 +188,7 @@ Describe 'BlueSkyModule Private API Functions' {
     Context 'Get-BlueSkyNotificationApi' {
         It 'Should call Invoke-BlueSkyApiRequest and return a PSObject' {
             Mock Invoke-BlueSkyApiRequest { @{ notifications = @(1,2) } }
-            $result = Get-BlueSkyNotificationApi -Session $testSession
+            $result = Get-BlueSkyNotificationApi -Session $module:BlueSkySession
             $result.notifications.Count | Should -Be 2
         }
     }
@@ -198,7 +204,17 @@ Describe 'BlueSkyModule Private API Functions' {
     Context 'Add-BlueSkyLikeApi' {
         It 'Should call Invoke-BlueSkyApiRequest and return a PSObject' {
             Mock Invoke-BlueSkyApiRequest { @{ like = 'ok' } }
-            $result = Add-BlueSkyLikeApi -Session $testSession -PostUri 'at://test/post/123'
+            # Use the variable in the test (was defined but not used)
+            $likeBody = @{ 
+                collection = 'app.bsky.feed.like'
+                repo = $module:BlueskySession.Did
+                record = @{ 
+                    subject = @{ uri = 'at://test/post/123'; cid = 'cid123'}
+                    createdAt = (Get-Date -AsUtc).ToString("o") 
+                } 
+            }
+            # Pass the body to the API call
+            $result = Add-BlueSkyLikeApi -Session $module:BlueskySession -PostUri 'at://test/post/123' -Body $likeBody
             $result.like | Should -Be 'ok'
         }
     }
@@ -214,7 +230,14 @@ Describe 'BlueSkyModule Private API Functions' {
     Context 'Remove-BlueSkyPostApi' {
         It 'Should call Invoke-BlueSkyApiRequest and return a PSObject' {
             Mock Invoke-BlueSkyApiRequest { @{ success = $true } }
-            $result = Remove-BlueSkyPostApi -Session $testSession -PostUri 'at://test/app.bsky.feed.post/123'
+            # Use the variable in the test (was defined but not used)
+            $deleteBody = @{ 
+                repo = $module:BlueskySession.Did
+                collection = 'app.bsky.feed.post'
+                rkey = '123' 
+            }
+            # Pass the body to the API call
+            $result = Remove-BlueSkyPostApi -Session $module:BlueSkySession -PostUri 'at://did:plc:testuser1234/app.bsky.feed.post/123' -Body $deleteBody
             $result.success | Should -Be $true
         }
     }

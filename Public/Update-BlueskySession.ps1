@@ -1,72 +1,53 @@
-function Update-BlueskySession {
+﻿function Update-BlueskySession {
     <#
     .SYNOPSIS
-        Refreshes the current Bluesky session using the refresh token.
+        Refreshes the current Bluesky session authentication tokens.
     .DESCRIPTION
-        Calls the Bluesky API to refresh expired or expiring session tokens 
-        and updates the global session object with new authentication credentials.
+        Updates the session tokens using the refresh token to extend the session lifetime.
+        This should be called when the access token is nearing expiration.
     .EXAMPLE
         PS> Update-BlueskySession
         Refreshes the current session tokens.
     .OUTPUTS
         PSCustomObject
-        Returns the updated session object with new tokens.
-    .NOTES
-        Requires an active session with a valid refresh token.
-        Automatically updates the global BlueskySession variable.
+        Returns the updated session information or null on failure.
     #>
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess)]
     [OutputType([PSCustomObject])]
     param()
     
-    $currentSession = $global:BlueskySession
-    
-    if (-not $currentSession) {
-        Write-Warning "No active session found. Please connect first by running 'Connect-BlueskySession'."
-        return $null
-    }
-    
-    if (-not $currentSession.RefreshToken) {
-        Write-Warning "No refresh token available in current session. Please reconnect using 'Connect-BlueskySession'."
-        return $null
-    }
-    
     try {
-        $refreshEndpoint = "/xrpc/com.atproto.server.refreshSession"
-        $requestHeaders = @{
-            'Authorization' = "Bearer $($currentSession.RefreshToken)"
-            'Content-Type' = 'application/json'
-            'User-Agent' = 'PowerShell-BlueskyCLI/1.0'
+        if (-not $module:BlueskySession) {
+            Write-Error "No active session found. Please connect first using Connect-BlueskySession"
+            return $null
         }
         
-        Write-Verbose "Refreshing session tokens for user: $($currentSession.Username)"
-        
-        $refreshResponse = Invoke-RestMethod -Uri ("https://bsky.social" + $refreshEndpoint) -Method POST -Headers $requestHeaders -ErrorAction Stop
-        
-        if (-not $refreshResponse -or -not $refreshResponse.accessJwt) {
-            throw "Token refresh failed: Invalid response from Bluesky service."
+        if ($PSCmdlet.ShouldProcess("Bluesky Session", "Refresh authentication tokens")) {
+            $headers = @{
+                "Authorization" = "Bearer $($module:BlueskySession.RefreshJwt)"
+                "Content-Type" = "application/json"
+            }
+            
+            $response = Invoke-RestMethod -Uri "https://bsky.social/xrpc/com.atproto.server.refreshSession" -Method Post -Headers $headers
+            
+            # Update module session
+            $module:BlueskySession.AccessJwt = $response.accessJwt
+            $module:BlueskySession.RefreshJwt = $response.refreshJwt
+            $module:BlueskySession.Handle = $response.handle
+            $module:BlueskySession.Did = $response.did
+            
+            Write-Information "Session refreshed successfully" -InformationAction Continue
+            
+            return [PSCustomObject]@{
+                Handle = $response.handle
+                Did = $response.did
+                Status = "Refreshed"
+                UpdatedAt = Get-Date
+            }
         }
         
-        # Update session with new tokens
-        $global:BlueskySession.AccessToken = $refreshResponse.accessJwt
-        $global:BlueskySession.RefreshToken = $refreshResponse.refreshJwt
-        $global:BlueskySession.ExpiresAt = (Get-Date).AddHours(12)
-        
-        Write-Host "Session tokens refreshed successfully" -ForegroundColor Green
-        return $global:BlueskySession
-        
-    } catch [System.Net.WebException] {
-        $errorMessage = "Network error during token refresh: $($_.Exception.Message)"
-        Write-Error $errorMessage
-        return $null
     } catch {
-        $errorMessage = switch -Regex ($_.Exception.Message) {
-            'Unauthorized|401' { "Token refresh failed: Refresh token is invalid or expired. Please reconnect using 'Connect-BlueskySession'." }
-            'Forbidden|403' { "Token refresh denied: Your session may have been revoked. Please reconnect using 'Connect-BlueskySession'." }
-            'Not Found|404' { "Service unavailable: Unable to reach Bluesky token refresh service." }
-            default { "Failed to refresh session tokens: $($_.Exception.Message)" }
-        }
-        Write-Error $errorMessage
+        Write-Error "Failed to refresh session: $($_.Exception.Message)"
         return $null
     }
 }

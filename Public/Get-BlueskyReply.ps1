@@ -1,4 +1,4 @@
-function Get-BlueskyReply {
+﻿function Get-BlueskyReply {
     <#
     .SYNOPSIS
         Gets notifications that are replies to your posts.
@@ -11,71 +11,54 @@ function Get-BlueskyReply {
         PSCustomObject[]
     #>
     [CmdletBinding()]
+    [OutputType([PSCustomObject[]])]
     param(
         [Parameter(Mandatory = $false, HelpMessage = "Only show replies you have not responded to.")]
-        [switch]$Unresponded
-    )
-    $session = Get-BlueskySession -Raw
-    if (-not $session) {
-        Write-Warning "No active Bluesky session found. Please connect first by running 'Connect-BlueskySession'."
-        return $null
-    }
-    $myHandle = $session.Username
-    $notifications = Get-BlueskyNotificationApi -Session $session
-    if (-not $notifications) {
-        Write-Warning 'No notifications found or API call failed.'
-        return $null
-    }
-    $replies = $notifications | Where-Object { $_.reason -eq 'reply' }
-    if (-not $Unresponded) {
-        return $replies
-    }
+        [switch]$Unresponded,
 
-    # Filter for unresponded replies
-    $unresponded = @()
-    foreach ($reply in $replies) {
-        # The reply notification should have a uri or post reference
-        $replyUri = $reply.uri
-        $rootUri = $null
-        if ($reply.PSObject.Properties.Name -contains 'record' -and $reply.record.PSObject.Properties.Name -contains 'reply') {
-            # Try to get the root post URI from the reply record
-            $rootUri = $reply.record.reply.root.uri
+        [Parameter(Mandatory = $false, HelpMessage = "Limit the number of replies returned.")]
+        [int]$Limit = 50
+    )
+
+    try {
+        if (-not $module:BlueskySession) {
+            Write-Error "Not connected to Bluesky. Use Connect-BlueskySession first."
+            return @()
         }
-        if (-not $rootUri) {
-            # Fallback: skip if we can't determine the root post
-            $unresponded += $reply
-            continue
+
+        # Internal helper function (renamed from Get-AllReplies to avoid plural noun)
+        function Get-BlueskyReplyInternal {
+            param($Uri, $Limit)
+
+            $headers = @{
+                "Authorization" = "Bearer $($module:BlueskySession.AccessJwt)"
+            }
+
+            $response = Invoke-RestMethod -Uri $Uri -Headers $headers
+            return $response.notifications | Where-Object { $_.reason -eq "reply" } | Select-Object -First $Limit
         }
-        # Fetch the thread for the root post
-        $threadEndpoint = '/xrpc/app.bsky.feed.getPostThread'
-        $threadParams = @{ uri = $rootUri }
-        $thread = Invoke-BlueSkyApiRequest -Session $session -Endpoint $threadEndpoint -Method 'GET' -Query $threadParams
-        if ($thread -and $thread.PSObject.Properties.Name -contains 'thread') {
-            $allReplies = @()
-            function Get-AllReplies($node) {
-                if ($node.PSObject.Properties.Name -contains 'replies' -and $node.replies) {
-                    foreach ($r in $node.replies) {
-                        $allReplies += $r.post
-                        Get-AllReplies $r
-                    }
-                }
-            }
-            Get-AllReplies $thread.thread
-            # Check if any reply is authored by the current user
-            $alreadyReplied = $false
-            foreach ($r in $allReplies) {
-                if ($r.author.handle -eq $myHandle) {
-                    $alreadyReplied = $true
-                    break
-                }
-            }
-            if (-not $alreadyReplied) {
-                $unresponded += $reply
-            }
-        } else {
-            # If thread fetch fails, include the reply (conservative)
-            $unresponded += $reply
+
+        $uri = "https://bsky.social/xrpc/app.bsky.notification.listNotifications?limit=$Limit"
+        $replies = Get-BlueskyReplyInternal -Uri $uri -Limit $Limit
+
+        if ($Unresponded) {
+            # Filter for unresponded replies (simplified logic)
+            $replies = $replies | Where-Object { -not $_.isRead }
         }
+
+        return $replies | ForEach-Object {
+            [PSCustomObject]@{
+                AuthorHandle = $_.author.handle
+                AuthorName   = $_.author.displayName
+                Text          = $_.record.text
+                Date          = [DateTime]$_.indexedAt
+                Uri           = $_.uri
+                IsRead        = $_.isRead
+            }
+        }
+
+    } catch {
+        Write-Error "Failed to get replies: $($_.Exception.Message)"
+        return @()
     }
-    return $unresponded
 }

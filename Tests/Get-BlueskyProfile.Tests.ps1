@@ -1,7 +1,7 @@
-Describe 'Get-BlueskyProfile' {
+﻿Describe 'Get-BlueskyProfile' {
     BeforeAll {
         Import-Module "$PSScriptRoot/../BlueSkyModule.psd1" -Force
-        $global:BlueskySession = [PSCustomObject]@{
+        $module:BlueskySession = [PSCustomObject]@{
             Username = 'testuser'
             AccessToken = 'token'
             RefreshToken = 'refresh'
@@ -14,7 +14,7 @@ Describe 'Get-BlueskyProfile' {
         $result.handle | Should -Be 'testuser'
     }
     It 'Returns profile for specified actor' {
-        Mock Get-BlueskyProfileApi { param($Session, $Params) @{ handle = $Params.actor } }
+        Mock Get-BlueskyProfileApi { param($Params) @{ handle = $Params.actor } }
         $result = Get-BlueskyProfile -Actor 'bob'
         $result.handle | Should -Be 'bob'
     }

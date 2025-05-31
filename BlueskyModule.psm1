@@ -1,5 +1,8 @@
-# BlueSkyModule.psm1
+﻿# BlueSkyModule.psm1
 # Main module file for BlueSky PowerShell module
+
+# Module-scoped session variable instead of global
+$module:BlueskySession = $null
 
 # Import all functions from Public and Private folders
 $Public = @(Get-ChildItem -Path $PSScriptRoot\Public\*.ps1 -ErrorAction SilentlyContinue)
@@ -16,3 +19,6 @@ foreach ($import in @($Public + $Private)) {
 
 # Export public functions
 Export-ModuleMember -Function $Public.BaseName
+
+# Export module variable for session management
+Export-ModuleMember -Variable BlueskySession

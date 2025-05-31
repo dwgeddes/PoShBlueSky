@@ -1,7 +1,7 @@
-Describe 'Add-BlueskyFollowedUser/Remove-BlueskyFollowedUser' {
+﻿Describe 'Add-BlueskyFollowedUser/Remove-BlueskyFollowedUser' {
     BeforeAll {
         Import-Module "$PSScriptRoot/../BlueSkyModule.psd1" -Force
-        $global:BlueskySession = [PSCustomObject]@{
+        $module:BlueskySession = [PSCustomObject]@{
             Username = 'testuser'
             AccessToken = 'token'
             RefreshToken = 'refresh'

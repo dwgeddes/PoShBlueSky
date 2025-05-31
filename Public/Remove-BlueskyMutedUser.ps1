@@ -1,9 +1,9 @@
-function Remove-BlueskyMutedUser {
+﻿function Remove-BlueskyMutedUser {
     <#
     .SYNOPSIS
         Unmutes a user on Bluesky.
     .DESCRIPTION
-        Removes a user from your muted users list, allowing you to see their content again.
+        Removes a user from your muted users list, allowing their content to appear in your timeline again.
     .PARAMETER UserDid
         The DID (Decentralized Identifier) of the user to unmute.
     .EXAMPLE
@@ -36,7 +36,7 @@ function Remove-BlueskyMutedUser {
                 $result = Invoke-BlueSkyApiRequest -Session $session -Endpoint $endpoint -Method 'POST' -Body $body
                 
                 if ($result) {
-                    Write-Host "User unmuted successfully" -ForegroundColor Green
+                    Write-Information "User unmuted successfully" -InformationAction Continue
                     return [PSCustomObject]@{
                         Success = $true
                         UserDid = $UserDid

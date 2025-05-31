@@ -1,4 +1,4 @@
-function Get-BlueskyTimeline {
+﻿function Get-BlueskyTimeline {
     <#
     .SYNOPSIS
         Retrieves the timeline for the authenticated Bluesky user.

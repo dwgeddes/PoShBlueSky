@@ -1,4 +1,4 @@
-function Get-BlueskyNotification {
+﻿function Get-BlueskyNotification {
     <#
     .SYNOPSIS
         Retrieves notifications for the authenticated BlueSky user.
@@ -121,7 +121,6 @@ function Get-BlueskyNotification {
                 
                 # For likes and reposts, get subject post information
                 $subjectPostText = $null
-                $subjectPostAuthor = $null
                 if ($notification.reason -in @('like', 'repost', 'quote') -and $notification.reasonSubject) {
                     # Note: The reasonSubject URI points to the post that was liked/reposted
                     # The actual post content isn't always included in the notification

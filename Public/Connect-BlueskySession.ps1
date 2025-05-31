@@ -1,4 +1,4 @@
-function Connect-BlueskySession {
+﻿function Connect-BlueskySession {
     <#
     .SYNOPSIS
         Establishes an authenticated session with the Bluesky service.
@@ -9,104 +9,123 @@ function Connect-BlueskySession {
         The Bluesky username or handle (e.g., 'user.bsky.social' or 'user@domain.com').
     .PARAMETER Password
         The Bluesky password as a SecureString for enhanced security.
+    .PARAMETER Credential
+        A PSCredential object containing username and password.
     .EXAMPLE
         PS> Connect-BlueskySession -Username 'myhandle.bsky.social'
         Prompts for password and establishes a session.
     .EXAMPLE
-        PS> $securePassword = ConvertTo-SecureString 'mypassword' -AsPlainText -Force
-        PS> Connect-BlueskySession -Username 'myhandle.bsky.social' -Password $securePassword
-        Establishes a session using provided credentials.
+        PS> $credential = Get-Credential
+        PS> Connect-BlueskySession -Credential $credential
+        Establishes a session using a credential object.
     .OUTPUTS
         PSCustomObject
         Returns the established session object with authentication tokens.
     .NOTES
-        Stores credentials in environment variables for session duration.
-        Session tokens are cached in the global BlueskySession variable.
+        Session tokens are cached in the module scope for subsequent API calls.
+        Avoid using plaintext passwords - use Get-Credential or SecureString instead.
     #>
     [CmdletBinding()]
     [OutputType([PSCustomObject])]
     param (
-        [Parameter(Mandatory = $true, ValueFromPipelineByPropertyName = $true, 
-                   HelpMessage = "The Bluesky username or handle.")]
-        [ValidateNotNullOrEmpty()]
+        [Parameter(Mandatory = $false)]
         [string]$Username,
         
-        [Parameter(Mandatory = $false, ValueFromPipelineByPropertyName = $true, 
-                   HelpMessage = "The Bluesky password as a SecureString.")]
-        [System.Security.SecureString]$Password
+        [Parameter(Mandatory = $false)]
+        [securestring]$Password,
+        
+        [Parameter(Mandatory = $false)]
+        [PSCredential]$Credential
     )
     
-    process {
-        $ErrorActionPreference = 'Stop'
+    try {
+        # Get credentials from various sources
+        if ($Credential) {
+            $Username = $Credential.UserName
+            $Password = $Credential.Password
+        } elseif (-not ($Username -and $Password)) { # Check if both are not provided
+            $envUsername = $env:BLUESKY_USERNAME
+            $envPasswordStr = $env:BLUESKY_PASSWORD # Read as string first
+            
+            if ($envUsername -and $envPasswordStr) {
+                Write-Warning "Attempting to use credentials from environment variables. For production, ensure BLUESKY_PASSWORD is a securely stored (e.g., encrypted) string or use PSCredential objects/interactive prompts."
+                $Username = $envUsername
+                try {
+                    # Attempt to convert assuming it might be an encrypted string.
+                    # If it's plaintext, this will likely fail or produce a non-functional SecureString.
+                    $Password = ConvertTo-SecureString $envPasswordStr
+                    Write-Verbose "Successfully converted BLUESKY_PASSWORD environment variable to SecureString."
+                } catch {
+                    Write-Warning "Could not convert BLUESKY_PASSWORD environment variable to SecureString (was it plaintext?). Falling back to interactive prompt."
+                    # Fallback to Get-Credential if conversion fails
+                    $Credential = Get-Credential -Message "Enter Bluesky credentials for user '$envUsername'" -UserName $envUsername
+                    if (-not $Credential) {
+                        Write-Error "Credentials are required to connect."
+                        return $null
+                    }
+                    $Username = $Credential.UserName
+                    $Password = $Credential.Password
+                }
+            } else {
+                # Prompt for credentials interactively if not fully provided by other means
+                $Credential = Get-Credential -Message "Enter Bluesky credentials" -UserName $Username
+                if (-not $Credential) {
+                    Write-Error "Credentials are required to connect."
+                    return $null
+                }
+                $Username = $Credential.UserName
+                $Password = $Credential.Password
+            }
+        }
+        
+        if (-not $Username -or -not $Password -or $Password.Length -eq 0) {
+            Write-Error "Username and a non-empty password are required."
+            return $null
+        }
+        
+        # Convert SecureString to plain text for API call
+        $plaintextPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password))
         
         try {
-            # Prompt for password if not provided
-            if (-not $Password) {
-                Write-Host "Enter password for user: $Username" -ForegroundColor Cyan
-                $Password = Read-Host -AsSecureString -Prompt "Password"
-            }
-            
-            # Convert SecureString to plain text for API call
-            $networkCredential = [System.Net.NetworkCredential]::new('', $Password)
-            $plainTextPassword = $networkCredential.Password
-            
-            # Prepare authentication request
-            $authenticationEndpoint = 'https://bsky.social/xrpc/com.atproto.server.createSession'
-            $requestBody = @{ 
+            # Create session request
+            $body = @{
                 identifier = $Username
-                password = $plainTextPassword 
+                password = $plaintextPassword
+            } | ConvertTo-Json
+            
+            $response = Invoke-RestMethod -Uri "https://bsky.social/xrpc/com.atproto.server.createSession" -Method Post -Body $body -ContentType "application/json"
+            
+            # Store in module scope instead of global
+            $module:BlueskySession = @{
+                AccessJwt = $response.accessJwt
+                RefreshJwt = $response.refreshJwt
+                Handle = $response.handle
+                Did = $response.did
+                CreatedAt = Get-Date
+                # Add AccessToken alias for compatibility
+                AccessToken = $response.accessJwt
+                RefreshToken = $response.refreshJwt
             }
             
-            Write-Verbose "Attempting authentication for user: $Username"
+            Write-Information "Successfully connected to Bluesky as $($response.handle)" -InformationAction Continue
             
-            # Make authentication request
-            $authResponse = Invoke-RestMethod -Uri $authenticationEndpoint -Method 'POST' -Body ($requestBody | ConvertTo-Json) -ContentType 'application/json' -ErrorAction Stop
-            
-            # Validate response
-            if (-not $authResponse -or -not $authResponse.accessJwt) {
-                throw "Authentication failed: Invalid response from Bluesky service. Please verify your credentials."
-            }
-            
-            # Store credentials in environment for session
-            $env:BLUESKY_USERNAME = $Username
-            $env:BLUESKY_PASSWORD = $plainTextPassword
-            
-            # Create and store session object
-            $sessionObject = [PSCustomObject]@{
-                AccessToken = $authResponse.accessJwt
-                RefreshToken = $authResponse.refreshJwt
-                ExpiresAt = (Get-Date).AddHours(12) # Default 12-hour expiry
-                Username = $Username
-                Handle = if ($authResponse.PSObject.Properties.Name -contains 'handle') { $authResponse.handle } else { $Username }
-                DistributedIdentifier = if ($authResponse.PSObject.Properties.Name -contains 'did') { $authResponse.did } else { $null }
+            return [PSCustomObject]@{
+                Handle = $response.handle
+                Did = $response.did
+                Status = "Connected"
                 CreatedAt = Get-Date
             }
-            
-            $global:BlueskySession = $sessionObject
-            
-            Write-Host "Successfully connected to Bluesky as: $($sessionObject.Handle)" -ForegroundColor Green
-            return $sessionObject
-            
-        } catch [System.Net.WebException] {
-            $errorMessage = "Network error connecting to Bluesky: $($_.Exception.Message)"
-            Write-Error $errorMessage
-            throw $errorMessage
-        } catch {
-            $errorMessage = switch -Regex ($_.Exception.Message) {
-                'Unauthorized|401' { "Authentication failed: Invalid username or password. Please verify your credentials." }
-                'Forbidden|403' { "Access denied: Your account may be restricted or suspended." }
-                'Not Found|404' { "Service unavailable: Unable to reach Bluesky authentication service." }
-                'timeout|timed out' { "Connection timeout: Please check your internet connection and try again." }
-                default { "Authentication failed: $($_.Exception.Message)" }
-            }
-            Write-Error $errorMessage
-            throw $errorMessage
         } finally {
-            # Clear sensitive data from memory
-            if ($networkCredential) {
-                $networkCredential.Password = ''
+            # Clear the plaintext password from memory immediately
+            if ($plaintextPassword) {
+                $plaintextPassword = $null
+                [System.GC]::Collect()
+                [System.GC]::WaitForPendingFinalizers()
             }
-            $plainTextPassword = $null
         }
+        
+    } catch {
+        Write-Error "Failed to connect to Bluesky: $($_.Exception.Message)"
+        return $null
     }
 }

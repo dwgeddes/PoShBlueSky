@@ -1,4 +1,4 @@
-function Invoke-BlueskyApiRequest {
+﻿function Invoke-BlueskyApiRequest {
     <#
     .SYNOPSIS
         Executes authenticated HTTP requests to the Bluesky API.
@@ -60,13 +60,14 @@ function Invoke-BlueskyApiRequest {
         }
         
         # Validate session has required tokens
-        if (-not $activeSession.AccessToken) {
+        $accessToken = $activeSession.AccessToken ?? $activeSession.AccessJwt
+        if (-not $accessToken) {
             throw 'Session does not contain a valid access token. Please reconnect by running "Connect-BlueskySession".'
         }
         
         # Prepare request headers
         $requestHeaders = @{
-            'Authorization' = "Bearer $($activeSession.AccessToken)"
+            'Authorization' = "Bearer $accessToken"
             'Content-Type'  = 'application/json'
             'User-Agent'    = 'PowerShell-BlueskyCLI/1.0'
             'Accept'        = 'application/json'
@@ -142,7 +143,6 @@ function Invoke-BlueskyApiRequest {
         
     } catch [System.ArgumentException] {
         throw "Invalid request parameters: $($_.Exception.Message)"
-        
     } catch {
         $errorMessage = switch -Regex ($_.Exception.Message) {
             'timeout|timed out' { "Request timeout: The API request took too long to complete." }

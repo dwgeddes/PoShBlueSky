@@ -1,15 +1,18 @@
-Describe 'Get-BlueskyReply' {
+﻿Describe 'Get-BlueskyReply' {
     BeforeAll {
         Import-Module "$PSScriptRoot/../BlueSkyModule.psd1" -Force
-        $global:BlueskySession = [PSCustomObject]@{
-            Username = 'testuser'
-            AccessToken = 'token'
-            RefreshToken = 'refresh'
-            Expires = (Get-Date).AddHours(1)
-        }
     }
     
     Context 'Basic functionality' {
+        BeforeEach {
+            $module:BlueskySession = [PSCustomObject]@{
+                Username = 'testuser'
+                AccessToken = 'token'
+                RefreshToken = 'refresh'
+                Expires = (Get-Date).AddHours(1)
+            }
+        }
+        
         It 'Returns reply notifications from API' {
             Mock Get-BlueskyNotificationApi { 
                 @(
@@ -35,21 +38,21 @@ Describe 'Get-BlueskyReply' {
             $result.Count | Should -Be 0
         }
         
-        It 'Returns null when API returns null' {
+        It 'Returns empty array when API returns null' {
             Mock Get-BlueskyNotificationApi { $null }
             $result = Get-BlueskyReply
-            $result | Should -Be $null
+            $result | Should -Be @()
         }
         
         It 'Throws when no session found' {
-            $global:BlueskySession = $null
+            $module:BlueskySession = $null
             { Get-BlueskyReply } | Should -Throw '*No active Bluesky session*'
         }
     }
     
     Context 'Unresponded filter' {
         BeforeEach {
-            $global:BlueskySession = [PSCustomObject]@{
+            $module:BlueskySession = [PSCustomObject]@{
                 Username = 'testuser'
                 AccessToken = 'token'
                 RefreshToken = 'refresh'

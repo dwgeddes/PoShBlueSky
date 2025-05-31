@@ -1,4 +1,4 @@
-function Convert-AtUriToUrl {
+﻿function Convert-AtUriToUrl {
     <#
     .SYNOPSIS
         Converts an AT Protocol URI to a user-friendly Bluesky URL.
@@ -8,8 +8,6 @@ function Convert-AtUriToUrl {
         Also handles converting DIDs to handles when possible.
     .PARAMETER AtUri
         The AT Protocol URI to convert.
-    .PARAMETER Session
-        Optional session object to resolve DIDs to handles.
     .EXAMPLE
         PS> Convert-AtUriToUrl -AtUri "at://did:plc:ixen5i426cpidtesanwni5hu/app.bsky.feed.post/3lka6e75c3z2k"
         Returns: "https://bsky.app/profile/did:plc:ixen5i426cpidtesanwni5hu/post/3lka6e75c3z2k"
@@ -20,10 +18,7 @@ function Convert-AtUriToUrl {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$AtUri,
-        
-        [Parameter(Mandatory = $false)]
-        $Session
+        [string]$AtUri
     )
     
     if (-not $AtUri -or -not $AtUri.StartsWith('at://')) {
@@ -42,8 +37,7 @@ function Convert-AtUriToUrl {
         $collection = $uriParts[1]
         $record = $uriParts[2]
         
-        # Try to resolve DID to handle if session is available
-        # For now, just use the DID directly - handle resolution could be added later
+        # Use the DID directly - handle resolution could be added later
         $identifier = $did
         
         # Convert based on collection type

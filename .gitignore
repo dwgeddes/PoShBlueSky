@@ -1,0 +1,10 @@
+.github/
+Tests/
+sa.txt
+*.Tests.ps1
+ComprehensiveTest.ps1
+FunctionExecutionTest.ps1
+# Temporary files
+*.bak
+*_old*
+test*.ps1

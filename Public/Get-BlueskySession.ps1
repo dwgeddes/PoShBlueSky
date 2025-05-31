@@ -1,65 +1,51 @@
-function Get-BlueskySession {
+﻿function Get-BlueskySession {
     <#
     .SYNOPSIS
-        Retrieves information about the current Bluesky session.
+        Retrieves the current Bluesky session information.
     .DESCRIPTION
-        Returns the session object for the current Bluesky connection. By default, 
-        sensitive tokens are masked for security. Use -Raw to get the complete 
-        session object for internal API operations.
+        Returns the current session details with masked authentication tokens for security.
+        Use -Raw parameter to get unmasked tokens for internal API calls.
     .PARAMETER Raw
-        If specified, returns the full session object including authentication 
-        tokens. Required for internal API calls.
+        Returns the session with unmasked tokens (for internal use).
     .EXAMPLE
         PS> Get-BlueskySession
-        Returns session information with masked tokens for display purposes.
+        Returns session info with masked tokens for display.
     .EXAMPLE
         PS> Get-BlueskySession -Raw
-        Returns the complete session object including tokens for API calls.
+        Returns session with actual tokens for API calls.
     .OUTPUTS
         PSCustomObject
-        Returns the session object or null if no active session exists.
-    .NOTES
-        Masked session objects are safe for display and logging.
-        Raw session objects contain sensitive authentication data.
+        Returns the session object or null if no session exists.
     #>
     [CmdletBinding()]
     [OutputType([PSCustomObject])]
-    param (
-        [Parameter(Mandatory = $false, HelpMessage = "Return the complete session object including authentication tokens.")]
+    param(
+        [Parameter(Mandatory = $false, HelpMessage = "Return unmasked session for internal use.")]
         [switch]$Raw
     )
     
-    if (-not $global:BlueskySession) {
-        # Write-Warning 'No active Bluesky session found.'
+    try {
+        if (-not $module:BlueskySession) {
+            Write-Warning "No active Bluesky session found. Please connect first by running 'Connect-BlueskySession'."
+            return $null
+        }
+        
+        if ($Raw) {
+            return $module:BlueskySession
+        }
+        
+        # Return session info with masked tokens for security
+        return [PSCustomObject]@{
+            Handle = $module:BlueskySession.Handle
+            Did = $module:BlueskySession.Did
+            Status = "Connected"
+            CreatedAt = $module:BlueskySession.CreatedAt
+            AccessToken = "***MASKED***"
+            RefreshToken = "***MASKED***"
+        }
+        
+    } catch {
+        Write-Error "Error retrieving session: $($_.Exception.Message)"
         return $null
     }
-    
-    if ($Raw) {
-        return $global:BlueskySession
-    }
-    
-    # Create masked version for safe display
-    $maskedSession = [PSCustomObject]@{
-        Username = $global:BlueskySession.Username
-        Handle = $global:BlueskySession.Handle
-        DistributedIdentifier = $global:BlueskySession.DistributedIdentifier
-        AccessToken = if ($global:BlueskySession.AccessToken) { 
-            $global:BlueskySession.AccessToken.Substring(0, [Math]::Min(10, $global:BlueskySession.AccessToken.Length)) + '...' 
-        } else { $null }
-        RefreshToken = if ($global:BlueskySession.RefreshToken) { 
-            $global:BlueskySession.RefreshToken.Substring(0, [Math]::Min(10, $global:BlueskySession.RefreshToken.Length)) + '...' 
-        } else { $null }
-        ExpiresAt = $global:BlueskySession.ExpiresAt
-        IsExpired = if ($global:BlueskySession.ExpiresAt) { 
-            $global:BlueskySession.ExpiresAt -lt (Get-Date) 
-        } else { $true }
-        CreatedAt = $global:BlueskySession.CreatedAt
-        Status = if ($global:BlueskySession.ExpiresAt -and $global:BlueskySession.ExpiresAt -gt (Get-Date)) { 
-            'Active' 
-        } else { 
-            'Expired' 
-        }
-    }
-    
-    return $maskedSession
 }

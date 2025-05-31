@@ -1,4 +1,4 @@
-function New-BlueskyPost {
+﻿function New-BlueskyPost {
     <#
     .SYNOPSIS
         Creates a new post on Bluesky with optional images.
@@ -115,22 +115,18 @@ function New-BlueskyPost {
                 Write-Verbose "Processing $($ImagePath.Count) image file(s)"
                 foreach ($imagePath in $ImagePath) {
                     try {
-                        $imageUploadResult = Upload-BlueSkyImageApi -Session $currentSession -Path $imagePath -ErrorAction Stop
+                        $imageUploadResult = Send-BlueSkyImageApi -Session $currentSession -Path $imagePath -ErrorAction Stop
                         if ($imageUploadResult -and $imageUploadResult.blob) {
                             $embedImages += @{
-                                alt = [System.IO.Path]::GetFileNameWithoutExtension($imagePath)
-                                image = @{
-                                    '$type' = "blob"
-                                    ref = $imageUploadResult.blob
-                                    mimeType = $imageUploadResult.mimeType
-                                    size = $imageUploadResult.size
-                                }
+                                alt = ""
+                                image = $imageUploadResult.blob
                             }
+                            Write-Verbose "Successfully uploaded image: $imagePath"
                         } else {
-                            throw "Failed to upload image: $imagePath"
+                            Write-Warning "Failed to upload image: $imagePath - No blob returned"
                         }
                     } catch {
-                        throw "Error uploading image '$imagePath': $($_.Exception.Message)"
+                        Write-Warning "Failed to upload image '$imagePath': $($_.Exception.Message)"
                     }
                 }
             }
@@ -139,22 +135,18 @@ function New-BlueskyPost {
                 Write-Verbose "Processing $($ImageBase64.Count) base64 image(s)"
                 foreach ($base64Image in $ImageBase64) {
                     try {
-                        $imageUploadResult = Upload-BlueSkyImageApi -Session $currentSession -Base64 $base64Image -ErrorAction Stop
+                        $imageUploadResult = Send-BlueSkyImageApi -Session $currentSession -Base64 $base64Image -ErrorAction Stop
                         if ($imageUploadResult -and $imageUploadResult.blob) {
                             $embedImages += @{
-                                alt = "Uploaded Image"
-                                image = @{
-                                    '$type' = "blob"
-                                    ref = $imageUploadResult.blob
-                                    mimeType = $imageUploadResult.mimeType
-                                    size = $imageUploadResult.size
-                                }
+                                alt = ""
+                                image = $imageUploadResult.blob
                             }
+                            Write-Verbose "Successfully uploaded base64 image"
                         } else {
-                            throw "Failed to upload base64 image data"
+                            Write-Warning "Failed to upload base64 image - No blob returned"
                         }
                     } catch {
-                        throw "Error uploading base64 image: $($_.Exception.Message)"
+                        Write-Warning "Failed to upload base64 image: $($_.Exception.Message)"
                     }
                 }
             }
@@ -178,8 +170,6 @@ function New-BlueskyPost {
                 $postResult = New-BlueskyPostApi -Session $currentSession -Body $postData -ErrorAction Stop
                 
                 if ($postResult) {
-                    Write-Host "Post created successfully" -ForegroundColor Green
-                    
                     # Return user-friendly result with essential information
                     $postUrl = Convert-AtUriToUrl -AtUri $postResult.uri
                     $postIdentifier = Get-PostIdentifierFromUri -AtUri $postResult.uri

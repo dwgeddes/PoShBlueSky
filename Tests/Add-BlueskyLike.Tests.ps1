@@ -1,7 +1,7 @@
-Describe 'Add/Remove-BlueskyLike' {
+﻿Describe 'Add/Remove-BlueskyLike' {
     BeforeAll {
         Import-Module "$PSScriptRoot/../BlueSkyModule.psd1" -Force
-        $global:BlueskySession = [PSCustomObject]@{
+        $module:BlueskySession = [PSCustomObject]@{
             Username = 'testuser'
             AccessToken = 'token'
             RefreshToken = 'refresh'
